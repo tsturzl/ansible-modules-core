@@ -34,8 +34,13 @@ options:
   name:
     description:
      - Name to give the instance (alphanumeric, dashes, underscore)
-     - To keep sanity on the Linode Web Console, name is prepended with LinodeID_
     default: null
+    type: string
+  group:
+    description:
+     - Linode group display name
+     - Set or update group
+    default: null,
     type: string
   linode_id:
     description:
@@ -103,6 +108,7 @@ EXAMPLES = '''
      module: linode
      api_key: 'longStringFromLinodeApi'
      name: linode-test1
+     group: test-servers
      plan: 1
      datacenter: 2
      distribution: 99
@@ -152,6 +158,14 @@ EXAMPLES = '''
      name: linode-test1
      linode_id: 12345678
      state: restarted
+
+# Update Linode Group Name
+- local_action:
+     module: linode
+     api_key: 'longStringFromLinodeApi'
+     linode_id: 12345678
+     group: newGroup
+     state: present
 '''
 
 import time
@@ -214,7 +228,7 @@ def getInstanceDetails(api, server):
                                         'ip_id': ip['IPADDRESSID']})
     return instance
 
-def linodeServers(module, api, state, name, plan, distribution, datacenter, linode_id, 
+def linodeServers(module, api, state, name, group, plan, distribution, datacenter, linode_id, 
                   payment_term, password, ssh_pub_key, swap, wait, wait_timeout):
     instances = []
     changed = False
@@ -255,12 +269,27 @@ def linodeServers(module, api, state, name, plan, distribution, datacenter, lino
                 res = api.linode_create(DatacenterID=datacenter, PlanID=plan, 
                                         PaymentTerm=payment_term)
                 linode_id = res['LinodeID']
+
                 # Update linode Label to match name
-                api.linode_update(LinodeId=linode_id, Label='%s_%s' % (linode_id, name))
+                if group:
+                  # Set group name and label
+                  api.linode_update(LinodeId=linode_id, Label='%s' % (name), lpm_displayGroup=group)
+                else:
+                  # Set label
+                  api.linode_update(LinodeId=linode_id, Label='%s' % (name))
+
                 # Save server
                 servers = api.linode_list(LinodeId=linode_id)
             except Exception, e:
                 module.fail_json(msg = '%s' % e.value[0]['ERRORMESSAGE'])
+
+        # If server exists set linode group name(if provided)
+        elif group:
+          # Update group name
+          api.linode_update(LinodeId=linode_id, lpm_displayGroup=group)
+
+          # Save server
+          servers = api.linode_list(LinodeId=linode_id)
 
         if not disks:
             for arg in ('name', 'linode_id', 'distribution'):
@@ -445,6 +474,7 @@ def main():
                                                      'restarted']),
             api_key = dict(),
             name = dict(type='str'),
+            group = dict(type='str'),
             plan = dict(type='int'),
             distribution = dict(type='int'),
             datacenter = dict(type='int'),
@@ -466,6 +496,7 @@ def main():
     state = module.params.get('state')
     api_key = module.params.get('api_key')
     name = module.params.get('name')
+    group = module.params.get('group')
     plan = module.params.get('plan')
     distribution = module.params.get('distribution')
     datacenter = module.params.get('datacenter')
@@ -491,7 +522,7 @@ def main():
     except Exception, e:
         module.fail_json(msg = '%s' % e.value[0]['ERRORMESSAGE'])
 
-    linodeServers(module, api, state, name, plan, distribution, datacenter, linode_id, 
+    linodeServers(module, api, state, name, group, plan, distribution, datacenter, linode_id, 
                  payment_term, password, ssh_pub_key, swap, wait, wait_timeout)
 
 # import module snippets
